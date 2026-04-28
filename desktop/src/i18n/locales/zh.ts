@@ -20,6 +20,7 @@ export const zh: Record<TranslationKey, string> = {
   // ─── Sidebar ──────────────────────────────────────
   'sidebar.newSession': '新建会话',
   'sidebar.scheduled': '定时任务',
+  'sidebar.terminal': '终端',
   'sidebar.settings': '设置',
   'sidebar.searchPlaceholder': '搜索会话...',
   'sidebar.noSessions': '暂无会话',
@@ -72,6 +73,7 @@ export const zh: Record<TranslationKey, string> = {
   'settings.terminal.status.exited': '已退出',
   'settings.terminal.status.error': '错误',
   'settings.terminal.status.unavailable': '不可用',
+  'terminal.newTab': '新建终端',
 
   // Settings > Claude Official Login
   'settings.claudeOfficialLogin.intro': '使用官方 Claude 模型需要登录你的 Claude.ai 账号。点击下方按钮,浏览器会打开 Claude 官方登录页面,授权后自动回到这里。',
