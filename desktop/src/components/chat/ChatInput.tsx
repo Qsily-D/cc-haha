@@ -362,6 +362,14 @@ export function ChatInput({ variant = 'default' }: ChatInputProps) {
       return
     }
 
+    if (localSlashPanel) {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setLocalSlashPanel(null)
+        return
+      }
+    }
+
     if (slashMenuOpen && filteredCommands.length > 0) {
       if (event.key === 'ArrowDown') {
         event.preventDefault()
