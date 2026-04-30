@@ -120,22 +120,26 @@ vi.mock('../../api/sessions', () => ({
 }))
 
 import { useSettingsStore } from '../../stores/settingsStore'
+import { useWorkspaceChatContextStore } from '../../stores/workspaceChatContextStore'
 import { useWorkspacePanelStore } from '../../stores/workspacePanelStore'
 import { WorkspacePanel } from './WorkspacePanel'
 
 describe('WorkspacePanel', () => {
   const workspaceInitialState = useWorkspacePanelStore.getInitialState()
+  const workspaceChatInitialState = useWorkspaceChatContextStore.getInitialState()
   const settingsInitialState = useSettingsStore.getInitialState()
 
   beforeEach(async () => {
     vi.clearAllMocks()
     await setWorkspaceState(workspaceInitialState)
+    useWorkspaceChatContextStore.setState(workspaceChatInitialState, true)
     await setSettingsState({ ...settingsInitialState, locale: 'en' })
   })
 
   afterEach(async () => {
     cleanup()
     await setWorkspaceState(workspaceInitialState)
+    useWorkspaceChatContextStore.setState(workspaceChatInitialState, true)
     await setSettingsState(settingsInitialState)
     vi.restoreAllMocks()
   })
@@ -790,6 +794,123 @@ describe('WorkspacePanel', () => {
     ])
     expect(useWorkspacePanelStore.getState().activePreviewTabIdBySession['session-preview-menu']).toBe('diff:vite.config.js')
     expect(view.queryByRole('tab', { name: /index\.css/i })).toBeNull()
+  })
+
+  it('adds a workspace file to the chat context from the file tree menu', async () => {
+    await setWorkspaceState((state) => ({
+      ...state,
+      panelBySession: {
+        ...state.panelBySession,
+        'session-add-file': {
+          isOpen: true,
+          activeView: 'all',
+        },
+      },
+      statusBySession: {
+        ...state.statusBySession,
+        'session-add-file': {
+          state: 'ok',
+          workDir: '/repo',
+          repoName: 'repo',
+          branch: 'main',
+          isGitRepo: true,
+          changedFiles: [],
+        },
+      },
+      treeBySessionPath: {
+        ...state.treeBySessionPath,
+        'session-add-file': {
+          '': {
+            state: 'ok',
+            path: '',
+            entries: [{ name: 'App.tsx', path: 'src/App.tsx', isDirectory: false }],
+          },
+        },
+      },
+    }))
+
+    const view = await renderPanel('session-add-file')
+
+    await act(() => {
+      fireEvent.contextMenu(view.getByRole('button', { name: /App\.tsx/i }), {
+        clientX: 260,
+        clientY: 80,
+      })
+    })
+
+    await clickElement(view.getByRole('menuitem', { name: 'Add to chat' }))
+
+    expect(useWorkspaceChatContextStore.getState().referencesBySession['session-add-file']).toMatchObject([
+      {
+        kind: 'file',
+        path: 'src/App.tsx',
+        absolutePath: '/repo/src/App.tsx',
+        name: 'App.tsx',
+      },
+    ])
+  })
+
+  it('adds a line comment from a code preview to the chat context', async () => {
+    await setWorkspaceState((state) => ({
+      ...state,
+      panelBySession: {
+        ...state.panelBySession,
+        'session-line-comment': {
+          isOpen: true,
+          activeView: 'all',
+        },
+      },
+      statusBySession: {
+        ...state.statusBySession,
+        'session-line-comment': {
+          state: 'ok',
+          workDir: '/repo',
+          repoName: 'repo',
+          branch: 'main',
+          isGitRepo: true,
+          changedFiles: [],
+        },
+      },
+      previewTabsBySession: {
+        ...state.previewTabsBySession,
+        'session-line-comment': [{
+          id: 'file:src/App.tsx',
+          path: 'src/App.tsx',
+          kind: 'file',
+          title: 'App.tsx',
+          language: 'tsx',
+          content: 'const title = "Todo"\nexport default title',
+          state: 'ok',
+          size: 42,
+        }],
+      },
+      activePreviewTabIdBySession: {
+        ...state.activePreviewTabIdBySession,
+        'session-line-comment': 'file:src/App.tsx',
+      },
+    }))
+
+    const view = await renderPanel('session-line-comment')
+
+    await clickElement(view.getByRole('button', { name: 'Comment line 1' }))
+    const textarea = view.getByPlaceholderText('Describe what should change here...')
+    await act(() => {
+      fireEvent.change(textarea, { target: { value: 'Rename this title' } })
+    })
+    await clickElement(view.getByRole('button', { name: 'Add comment' }))
+
+    expect(useWorkspaceChatContextStore.getState().referencesBySession['session-line-comment']).toMatchObject([
+      {
+        kind: 'code-comment',
+        path: 'src/App.tsx',
+        absolutePath: '/repo/src/App.tsx',
+        name: 'App.tsx',
+        lineStart: 1,
+        lineEnd: 1,
+        note: 'Rename this title',
+        quote: 'const title = "Todo"',
+      },
+    ])
   })
 
   it('uses the localized view menu label', async () => {

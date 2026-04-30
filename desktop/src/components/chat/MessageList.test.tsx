@@ -662,6 +662,7 @@ describe('MessageList nested tool calls', () => {
               id: 'user-2',
               type: 'user_text',
               content: '第二段',
+              modelContent: '@"/tmp/example-project/src/App.tsx" 第二段',
               timestamp: 3,
             },
             {
@@ -686,7 +687,7 @@ describe('MessageList nested tool calls', () => {
     expect(sessionsApi.rewind).toHaveBeenCalledWith(ACTIVE_TAB, {
       targetUserMessageId: 'user-2',
       userMessageIndex: 1,
-      expectedContent: '第二段',
+      expectedContent: '@"/tmp/example-project/src/App.tsx" 第二段',
       dryRun: true,
     })
   })

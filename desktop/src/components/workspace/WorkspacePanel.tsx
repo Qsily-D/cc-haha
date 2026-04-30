@@ -14,6 +14,7 @@ import {
   type WorkspacePreviewKind,
   type WorkspacePreviewTab,
 } from '../../stores/workspacePanelStore'
+import { useWorkspaceChatContextStore } from '../../stores/workspaceChatContextStore'
 import { MarkdownRenderer } from '../markdown/MarkdownRenderer'
 import {
   getFileExtension,
@@ -38,6 +39,7 @@ type TreeNodeProps = {
   filterQuery: string
   onToggle: (path: string) => void
   onOpenFile: (path: string) => void
+  onFileContextMenu: (event: MouseEvent, path: string) => void
   activePath: string | null
 }
 
@@ -126,6 +128,11 @@ function getFileBadgeMeta(name: string) {
     label: extension ? extension.slice(0, 3).toUpperCase() : 'TXT',
     className: 'bg-[var(--color-text-tertiary)]/12 text-[var(--color-text-secondary)]',
   }
+}
+
+function resolveWorkspaceAttachmentPath(workDir: string | undefined, filePath: string) {
+  if (!workDir || filePath.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(filePath)) return filePath
+  return `${workDir.replace(/[\\/]+$/, '')}/${filePath.replace(/^[/\\]+/, '')}`
 }
 
 function isMarkdownPreview(tab: WorkspacePreviewTab) {
@@ -296,12 +303,30 @@ function FileStatusBadge({ status }: { status: WorkspaceFileStatus }) {
   )
 }
 
-function CodeSurface({ value, language }: { value: string; language: string }) {
+function CodeSurface({
+  value,
+  language,
+  onAddLineComment,
+}: {
+  value: string
+  language: string
+  onAddLineComment: (line: number, note: string, quote: string) => void
+}) {
   const t = useTranslation()
+  const [commentLine, setCommentLine] = useState<number | null>(null)
+  const [commentDraft, setCommentDraft] = useState('')
   const lines = value.split('\n')
   const visibleLines = lines.slice(0, WORKSPACE_PREVIEW_LINE_LIMIT)
   const visibleCode = visibleLines.join('\n')
   const hiddenLineCount = Math.max(0, lines.length - visibleLines.length)
+  const activeQuote = commentLine ? visibleLines[commentLine - 1] ?? '' : ''
+
+  const submitLineComment = () => {
+    if (!commentLine || !commentDraft.trim()) return
+    onAddLineComment(commentLine, commentDraft.trim(), activeQuote)
+    setCommentLine(null)
+    setCommentDraft('')
+  }
 
   return (
     <div className="min-h-0 flex-1 overflow-auto bg-[var(--color-code-bg)]">
@@ -320,21 +345,73 @@ function CodeSurface({ value, language }: { value: string; language: string }) {
             >
               {tokens.map((line, index) => {
                 const { key: lineKey, ...lineProps } = getLineProps({ line, key: index })
+                const lineNumber = index + 1
                 return (
-                  <div
-                    key={String(lineKey)}
-                    {...lineProps}
-                    className="grid grid-cols-[48px_minmax(0,1fr)] gap-3 px-3 hover:bg-[var(--color-surface-hover)]"
-                  >
-                    <span className="select-none text-right text-[11px] text-[var(--color-text-tertiary)]">
-                      {index + 1}
-                    </span>
-                    <span className="whitespace-pre pr-6">
-                      {line.length === 1 && line[0]?.empty ? ' ' : line.map((token, tokenIndex) => {
-                        const { key: tokenKey, ...tokenProps } = getTokenProps({ token, key: tokenIndex })
-                        return <span key={String(tokenKey)} {...tokenProps} />
-                      })}
-                    </span>
+                  <div key={String(lineKey)}>
+                    <div
+                      {...lineProps}
+                      className="group grid grid-cols-[48px_minmax(0,1fr)] gap-3 px-3 hover:bg-[var(--color-surface-hover)]"
+                    >
+                      <button
+                        type="button"
+                        aria-label={t('workspace.commentLine', { line: lineNumber })}
+                        onClick={() => {
+                          setCommentLine(lineNumber)
+                          setCommentDraft('')
+                        }}
+                        className="select-none text-right text-[11px] text-[var(--color-text-tertiary)] transition-colors hover:text-[var(--color-brand)] focus-visible:outline-none focus-visible:text-[var(--color-brand)]"
+                      >
+                        {lineNumber}
+                      </button>
+                      <span className="whitespace-pre pr-6">
+                        {line.length === 1 && line[0]?.empty ? ' ' : line.map((token, tokenIndex) => {
+                          const { key: tokenKey, ...tokenProps } = getTokenProps({ token, key: tokenIndex })
+                          return <span key={String(tokenKey)} {...tokenProps} />
+                        })}
+                      </span>
+                    </div>
+                    {commentLine === lineNumber && (
+                      <div className="grid grid-cols-[48px_minmax(0,720px)] gap-3 bg-[var(--color-brand)]/10 px-3 py-2">
+                        <span aria-hidden="true" />
+                        <div className="rounded-[10px] border border-[var(--color-border)] bg-[var(--color-surface-container-lowest)] shadow-sm">
+                          <div className="flex items-center gap-2 border-b border-[var(--color-border)] px-3 py-2">
+                            <span className="material-symbols-outlined text-[15px] text-[var(--color-text-tertiary)]">chat_bubble</span>
+                            <span className="text-[12px] font-semibold text-[var(--color-text-primary)]">{t('workspace.localComment')}</span>
+                            <span className="ml-auto text-[11px] text-[var(--color-text-tertiary)]">
+                              {t('workspace.commentLineTarget', { line: lineNumber })}
+                            </span>
+                          </div>
+                          <textarea
+                            value={commentDraft}
+                            onChange={(event) => setCommentDraft(event.target.value)}
+                            autoFocus
+                            rows={3}
+                            placeholder={t('workspace.commentPlaceholder')}
+                            className="block w-full resize-none bg-transparent px-3 py-3 text-[13px] leading-6 text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-tertiary)]"
+                          />
+                          <div className="flex justify-end gap-2 px-3 pb-3">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCommentLine(null)
+                                setCommentDraft('')
+                              }}
+                              className="rounded-[7px] px-2.5 py-1 text-[12px] text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]"
+                            >
+                              {t('common.cancel')}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={submitLineComment}
+                              disabled={!commentDraft.trim()}
+                              className="rounded-[7px] bg-[var(--color-text-primary)] px-2.5 py-1 text-[12px] font-medium text-[var(--color-surface)] disabled:cursor-not-allowed disabled:opacity-45"
+                            >
+                              {t('workspace.addCommentToChat')}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )
               })}
@@ -393,14 +470,17 @@ function ImagePreview({ tab }: { tab: WorkspacePreviewTab }) {
 function ChangedFileRow({
   file,
   onClick,
+  onContextMenu,
 }: {
   file: WorkspaceChangedFile
   onClick: () => void
+  onContextMenu: (event: MouseEvent, path: string) => void
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      onContextMenu={(event) => onContextMenu(event, file.path)}
       className="mx-2 flex w-[calc(100%-16px)] items-center gap-3 rounded-[7px] px-2 py-2 text-left transition-colors hover:bg-[var(--color-surface-hover)]"
     >
       <FileStatusBadge status={file.status} />
@@ -431,6 +511,7 @@ function TreeNode({
   filterQuery,
   onToggle,
   onOpenFile,
+  onFileContextMenu,
   activePath,
 }: TreeNodeProps) {
   const t = useTranslation()
@@ -447,6 +528,7 @@ function TreeNode({
       <button
         type="button"
         onClick={() => onOpenFile(entry.path)}
+        onContextMenu={(event) => onFileContextMenu(event, entry.path)}
         className={`group mx-2 flex h-8 w-[calc(100%-16px)] items-center gap-2 rounded-[7px] pr-2 text-left transition-colors ${
           isActive
             ? 'bg-[var(--color-surface-selected)] shadow-[inset_0_0_0_1.5px_var(--color-border-focus)]'
@@ -528,6 +610,7 @@ function TreeNode({
                 filterQuery={filterQuery}
                 onToggle={onToggle}
                 onOpenFile={onOpenFile}
+                onFileContextMenu={onFileContextMenu}
                 activePath={activePath}
               />
             ))}
@@ -542,6 +625,7 @@ export function WorkspacePanel({ sessionId }: WorkspacePanelProps) {
   const [filterQuery, setFilterQuery] = useState('')
   const [isViewMenuOpen, setIsViewMenuOpen] = useState(false)
   const [previewTabContextMenu, setPreviewTabContextMenu] = useState<{ tabId: string; x: number; y: number } | null>(null)
+  const [fileContextMenu, setFileContextMenu] = useState<{ path: string; x: number; y: number } | null>(null)
   const width = useWorkspacePanelStore((state) => state.width)
   const isOpen = useWorkspacePanelStore((state) => state.isPanelOpen(sessionId))
   const activeView = useWorkspacePanelStore((state) => state.getActiveView(sessionId))
@@ -566,6 +650,7 @@ export function WorkspacePanel({ sessionId }: WorkspacePanelProps) {
   const closePreview = useWorkspacePanelStore((state) => state.closePreview)
   const closePreviewTabs = useWorkspacePanelStore((state) => state.closePreviewTabs)
   const closePanel = useWorkspacePanelStore((state) => state.closePanel)
+  const addWorkspaceReference = useWorkspaceChatContextStore((state) => state.addReference)
 
   const rootTree = treeByPath['']
   const rootTreeKey = makeTreeStateKey(sessionId, '')
@@ -607,11 +692,14 @@ export function WorkspacePanel({ sessionId }: WorkspacePanelProps) {
   }, [activeView, isOpen, loadTree, rootTree, rootTreeError, rootTreeLoading, sessionId])
 
   useEffect(() => {
-    if (!previewTabContextMenu) return
-    const close = () => setPreviewTabContextMenu(null)
+    if (!previewTabContextMenu && !fileContextMenu) return
+    const close = () => {
+      setPreviewTabContextMenu(null)
+      setFileContextMenu(null)
+    }
     document.addEventListener('click', close)
     return () => document.removeEventListener('click', close)
-  }, [previewTabContextMenu])
+  }, [fileContextMenu, previewTabContextMenu])
 
   if (!isOpen) return null
 
@@ -635,6 +723,28 @@ export function WorkspacePanel({ sessionId }: WorkspacePanelProps) {
     void openPreview(sessionId, path, 'file')
   }
 
+  const addFileToChat = (path: string) => {
+    addWorkspaceReference(sessionId, {
+      kind: 'file',
+      path,
+      absolutePath: resolveWorkspaceAttachmentPath(status?.workDir, path),
+      name: path.split('/').pop() || path,
+    })
+  }
+
+  const addLineCommentToChat = (path: string, line: number, note: string, quote: string) => {
+    addWorkspaceReference(sessionId, {
+      kind: 'code-comment',
+      path,
+      absolutePath: resolveWorkspaceAttachmentPath(status?.workDir, path),
+      name: path.split('/').pop() || path,
+      lineStart: line,
+      lineEnd: line,
+      note,
+      quote,
+    })
+  }
+
   const handleSetActiveView = (view: 'changed' | 'all') => {
     setActiveView(sessionId, view)
     setIsViewMenuOpen(false)
@@ -643,13 +753,27 @@ export function WorkspacePanel({ sessionId }: WorkspacePanelProps) {
   const handlePreviewTabContextMenu = (event: MouseEvent, tabId: string) => {
     event.preventDefault()
     event.stopPropagation()
+    setFileContextMenu(null)
     setPreviewTabContextMenu({ tabId, x: event.clientX, y: event.clientY })
+  }
+
+  const handleFileContextMenu = (event: MouseEvent, path: string) => {
+    event.preventDefault()
+    event.stopPropagation()
+    setPreviewTabContextMenu(null)
+    setFileContextMenu({ path, x: event.clientX, y: event.clientY })
   }
 
   const handleClosePreviewTabs = (scope: WorkspacePreviewCloseScope) => {
     if (!previewTabContextMenu) return
     closePreviewTabs(sessionId, previewTabContextMenu.tabId, scope)
     setPreviewTabContextMenu(null)
+  }
+
+  const copyWorkspacePath = (path: string) => {
+    const resolvedPath = resolveWorkspaceAttachmentPath(status?.workDir, path)
+    void navigator.clipboard?.writeText(resolvedPath)
+    setFileContextMenu(null)
   }
 
   const renderChangedView = () => {
@@ -694,6 +818,7 @@ export function WorkspacePanel({ sessionId }: WorkspacePanelProps) {
             key={`${file.path}:${file.status}:${file.oldPath ?? ''}`}
             file={file}
             onClick={() => handleOpenDiff(file.path)}
+            onContextMenu={handleFileContextMenu}
           />
         ))}
       </div>
@@ -746,6 +871,7 @@ export function WorkspacePanel({ sessionId }: WorkspacePanelProps) {
               void toggleTreeNode(sessionId, path)
             }}
             onOpenFile={handleOpenFile}
+            onFileContextMenu={handleFileContextMenu}
             activePath={activeTreePath}
           />
         ))}
@@ -777,7 +903,15 @@ export function WorkspacePanel({ sessionId }: WorkspacePanelProps) {
               </span>
             </span>
           ))}
-          <span className="ml-auto shrink-0 rounded-[5px] border border-[var(--color-border)] px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.1em] text-[var(--color-text-tertiary)]">
+          <button
+            type="button"
+            onClick={() => addFileToChat(activePreviewTab.path)}
+            className="ml-auto inline-flex h-6 shrink-0 items-center gap-1 rounded-[6px] px-1.5 text-[11px] text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text-primary)]"
+          >
+            <span aria-hidden="true" className="material-symbols-outlined text-[14px]">person_add</span>
+            <span>{t('workspace.addToChat')}</span>
+          </button>
+          <span className="shrink-0 rounded-[5px] border border-[var(--color-border)] px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.1em] text-[var(--color-text-tertiary)]">
             {kindLabel}
           </span>
         </div>
@@ -797,6 +931,7 @@ export function WorkspacePanel({ sessionId }: WorkspacePanelProps) {
           <CodeSurface
             value={activePreviewTab.content ?? ''}
             language={activePreviewTab.language ?? 'text'}
+            onAddLineComment={(line, note, quote) => addLineCommentToChat(activePreviewTab.path, line, note, quote)}
           />
         ) : (
           <PanelMessage
@@ -1002,6 +1137,37 @@ export function WorkspacePanel({ sessionId }: WorkspacePanelProps) {
           {activeView === 'changed' ? renderChangedView() : renderAllFilesView()}
         </div>
       </div>
+
+      {fileContextMenu && (
+        <div
+          role="menu"
+          className="fixed z-50 min-w-[156px] rounded-[10px] border border-[var(--color-border)] bg-[var(--color-surface-container-lowest)] py-1 text-[12px] shadow-[var(--shadow-dropdown)]"
+          style={{ left: fileContextMenu.x, top: fileContextMenu.y }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              addFileToChat(fileContextMenu.path)
+              setFileContextMenu(null)
+            }}
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[var(--color-text-primary)] hover:bg-[var(--color-surface-hover)]"
+          >
+            <span aria-hidden="true" className="material-symbols-outlined text-[14px] text-[var(--color-text-tertiary)]">person_add</span>
+            <span>{t('workspace.addToChat')}</span>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => copyWorkspacePath(fileContextMenu.path)}
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[var(--color-text-primary)] hover:bg-[var(--color-surface-hover)]"
+          >
+            <span aria-hidden="true" className="material-symbols-outlined text-[14px] text-[var(--color-text-tertiary)]">content_copy</span>
+            <span>{t('workspace.copyPath')}</span>
+          </button>
+        </div>
+      )}
     </aside>
   )
 }

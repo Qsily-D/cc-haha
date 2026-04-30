@@ -38,6 +38,7 @@ type RewindTurnTarget = {
   messageId: string
   userMessageIndex: number
   content: string
+  expectedContent: string
   attachments?: Extract<UIMessage, { type: 'user_text' }>['attachments']
 }
 
@@ -129,6 +130,7 @@ export function getLatestCompletedTurnTarget(messages: UIMessage[]): RewindTurnT
       messageId: message.id,
       userMessageIndex,
       content: message.content,
+      expectedContent: message.modelContent ?? message.content,
       attachments: message.attachments,
       messageOffset,
     }
@@ -240,7 +242,7 @@ export function MessageList({ sessionId, compact = false }: MessageListProps = {
       sessionsApi.rewind(resolvedSessionId, {
         targetUserMessageId: latestTurnTarget.messageId,
         userMessageIndex: latestTurnTarget.userMessageIndex,
-        expectedContent: latestTurnTarget.content,
+        expectedContent: latestTurnTarget.expectedContent,
         dryRun: true,
       }),
       sessionsApi.getWorkspaceStatus(resolvedSessionId).catch(() => null),
@@ -295,7 +297,7 @@ export function MessageList({ sessionId, compact = false }: MessageListProps = {
       const result = await sessionsApi.rewind(resolvedSessionId, {
         targetUserMessageId: target.messageId,
         userMessageIndex: target.userMessageIndex,
-        expectedContent: target.content,
+        expectedContent: target.expectedContent,
       })
 
       await reloadHistory(resolvedSessionId)

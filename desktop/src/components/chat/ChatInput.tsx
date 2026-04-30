@@ -6,6 +6,11 @@ import { useUIStore } from '../../stores/uiStore'
 import { useSessionStore } from '../../stores/sessionStore'
 import { useSessionRuntimeStore } from '../../stores/sessionRuntimeStore'
 import { useTeamStore } from '../../stores/teamStore'
+import {
+  formatWorkspaceReferencePrompt,
+  useWorkspaceChatContextStore,
+  type WorkspaceChatReference,
+} from '../../stores/workspaceChatContextStore'
 import { sessionsApi } from '../../api/sessions'
 import { PermissionModeSelector } from '../controls/PermissionModeSelector'
 import { ModelSelector } from '../controls/ModelSelector'
@@ -29,14 +34,34 @@ type Attachment = {
   id: string
   name: string
   type: 'image' | 'file'
+  path?: string
   mimeType?: string
   previewUrl?: string
   data?: string
+  lineStart?: number
+  lineEnd?: number
+  note?: string
+  quote?: string
 }
 
 type ChatInputProps = {
   variant?: 'default' | 'hero'
   compact?: boolean
+}
+
+const EMPTY_WORKSPACE_REFERENCES: WorkspaceChatReference[] = []
+
+function workspaceReferenceToAttachment(reference: WorkspaceChatReference): Attachment {
+  return {
+    id: reference.id,
+    name: reference.name,
+    type: 'file',
+    path: reference.path,
+    lineStart: reference.lineStart,
+    lineEnd: reference.lineEnd,
+    note: reference.note,
+    quote: reference.quote,
+  }
 }
 
 export function ChatInput({ variant = 'default', compact = false }: ChatInputProps) {
@@ -68,13 +93,27 @@ export function ChatInput({ variant = 'default', compact = false }: ChatInputPro
   const memberInfo = useTeamStore((s) => activeTabId ? s.getMemberBySessionId(activeTabId) : null)
   const [gitInfo, setGitInfo] = useState<GitInfo | null>(null)
   const hasMessages = useChatStore((s) => activeTabId ? (s.sessions[activeTabId]?.messages?.length ?? 0) > 0 : false)
+  const workspaceReferences = useWorkspaceChatContextStore(
+    (s) => activeTabId ? s.referencesBySession[activeTabId] ?? EMPTY_WORKSPACE_REFERENCES : EMPTY_WORKSPACE_REFERENCES,
+  )
+  const addWorkspaceReference = useWorkspaceChatContextStore((s) => s.addReference)
+  const removeWorkspaceReference = useWorkspaceChatContextStore((s) => s.removeReference)
+  const clearWorkspaceReferences = useWorkspaceChatContextStore((s) => s.clearReferences)
 
   const isMemberSession = !!memberInfo
   const isActive = chatState !== 'idle'
   const isWorkspaceMissing = activeSession?.workDirExists === false
-  const canSubmit = !isWorkspaceMissing && (input.trim().length > 0 || (!isMemberSession && attachments.length > 0))
+  const hasWorkspaceReferences = !isMemberSession && workspaceReferences.length > 0
+  const canSubmit = !isWorkspaceMissing && (input.trim().length > 0 || (!isMemberSession && (attachments.length > 0 || hasWorkspaceReferences)))
   const isHeroComposer = variant === 'hero' && !isMemberSession && !compact
   const resolvedWorkDir = activeSession?.workDir || gitInfo?.workDir || undefined
+  const composerAttachments = useMemo(
+    () => [
+      ...attachments,
+      ...workspaceReferences.map(workspaceReferenceToAttachment),
+    ],
+    [attachments, workspaceReferences],
+  )
 
   useEffect(() => {
     textareaRef.current?.focus()
@@ -303,7 +342,7 @@ export function ChatInput({ variant = 'default', compact = false }: ChatInputPro
 
   const handleSubmit = () => {
     const text = input.trim()
-    if ((!text && (!attachments.length || isMemberSession)) || isWorkspaceMissing) return
+    if ((!text && ((!attachments.length && !hasWorkspaceReferences) || isMemberSession)) || isWorkspaceMissing) return
 
     const slashUiAction = !isMemberSession && text.startsWith('/') ? resolveSlashUiAction(text.slice(1)) : null
     if (slashUiAction?.type === 'panel') {
@@ -325,16 +364,55 @@ export function ChatInput({ variant = 'default', compact = false }: ChatInputPro
       return
     }
 
-    const attachmentPayload: AttachmentRef[] = attachments.map((attachment) => ({
+    const workspaceReferencePrompt = !isMemberSession
+      ? formatWorkspaceReferencePrompt(workspaceReferences)
+      : ''
+    const contentForModel = [workspaceReferencePrompt, text].filter(Boolean).join('\n\n')
+    const displayContent = text || (
+      workspaceReferences.length > 0
+        ? t('chat.workspaceReferencesOnly', { count: workspaceReferences.length })
+        : ''
+    )
+    const uploadAttachmentPayload: AttachmentRef[] = attachments.map((attachment) => ({
       type: attachment.type,
       name: attachment.name,
+      path: attachment.path,
       data: attachment.data,
       mimeType: attachment.mimeType,
+      lineStart: attachment.lineStart,
+      lineEnd: attachment.lineEnd,
+      note: attachment.note,
+      quote: attachment.quote,
     }))
+    const workspaceAttachmentPayload: AttachmentRef[] = workspaceReferences.map((reference) => ({
+      type: 'file' as const,
+      name: reference.name,
+      path: reference.absolutePath ?? reference.path,
+      lineStart: reference.lineStart,
+      lineEnd: reference.lineEnd,
+      note: reference.note,
+      quote: reference.quote,
+    }))
+    const visibleAttachmentPayload: AttachmentRef[] = [
+      ...uploadAttachmentPayload,
+      ...workspaceReferences.map((reference) => ({
+        type: 'file' as const,
+        name: reference.name,
+        path: reference.path,
+        lineStart: reference.lineStart,
+        lineEnd: reference.lineEnd,
+        note: reference.note,
+        quote: reference.quote,
+      })),
+    ]
 
-    sendMessage(activeTabId!, text, attachmentPayload)
+    sendMessage(activeTabId!, contentForModel, [...uploadAttachmentPayload, ...workspaceAttachmentPayload], {
+      displayContent,
+      displayAttachments: visibleAttachmentPayload,
+    })
     setInput('')
     setAttachments([])
+    if (!isMemberSession) clearWorkspaceReferences(activeTabId!)
     setPlusMenuOpen(false)
     setSlashMenuOpen(false)
     setFileSearchOpen(false)
@@ -488,6 +566,7 @@ export function ChatInput({ variant = 'default', compact = false }: ChatInputPro
 
   const removeAttachment = (id: string) => {
     setAttachments((prev) => prev.filter((attachment) => attachment.id !== id))
+    if (activeTabId) removeWorkspaceReference(activeTabId, id)
   }
 
   const insertSlashCommand = () => {
@@ -550,11 +629,19 @@ export function ChatInput({ variant = 'default', compact = false }: ChatInputPro
               ref={fileSearchRef}
               cwd={resolvedWorkDir || ''}
               filter={atFilter}
-              onSelect={(_path, name) => {
+              onSelect={(path, name) => {
                 if (atCursorPos >= 0) {
                   // Insert name at cursor position, replacing filter text
                   const newValue = `${input.slice(0, atCursorPos)}${name}${input.slice(atCursorPos)}`
                   const newCursorPos = atCursorPos + name.length
+                  if (activeTabId) {
+                    addWorkspaceReference(activeTabId, {
+                      kind: 'file',
+                      path,
+                      absolutePath: path,
+                      name,
+                    })
+                  }
                   setInput(newValue)
                   setFileSearchOpen(false)
                   setAtFilter('')
@@ -618,12 +705,12 @@ export function ChatInput({ variant = 'default', compact = false }: ChatInputPro
             </div>
           )}
 
-          {attachments.length > 0 && (
+          {composerAttachments.length > 0 && (
             isHeroComposer ? (
-              <AttachmentGallery attachments={attachments} variant="composer" onRemove={removeAttachment} />
+              <AttachmentGallery attachments={composerAttachments} variant="composer" onRemove={removeAttachment} />
             ) : (
               <div className="px-3 pt-3">
-                <AttachmentGallery attachments={attachments} variant="composer" onRemove={removeAttachment} />
+                <AttachmentGallery attachments={composerAttachments} variant="composer" onRemove={removeAttachment} />
               </div>
             )
           )}

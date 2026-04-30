@@ -70,6 +70,13 @@ export const zh: Record<TranslationKey, string> = {
   'workspace.previewState.missing': '文件不存在。',
   'workspace.imagePreviewUnavailable': '图片无法预览。',
   'workspace.previewLineLimit': '仅显示前 {count} 行。完整内容请在编辑器中打开。',
+  'workspace.addToChat': '添加到聊天',
+  'workspace.copyPath': '复制路径',
+  'workspace.localComment': '本地评论',
+  'workspace.commentLine': '评论第 {line} 行',
+  'workspace.commentLineTarget': '第 {line} 行',
+  'workspace.commentPlaceholder': '描述你希望这里怎么改...',
+  'workspace.addCommentToChat': '添加评论',
 
   // ─── Status Bar ──────────────────────────────────────
   'status.connected': '已连接',
@@ -529,6 +536,7 @@ export const zh: Record<TranslationKey, string> = {
   'chat.placeholder': '让 Claude 编辑、调试或解释代码...',
   'chat.placeholderMissing': '此会话指向的工作目录缺失。请新建会话或选择其他项目。',
   'chat.addFiles': '添加文件或图片',
+  'chat.workspaceReferencesOnly': '已添加 {count} 个工作区引用',
   'chat.slashCommands': '斜杠命令',
   'slash.mcp.title': '可用 MCP 工具',
   'slash.mcp.subtitle': '展示当前聊天上下文里的全局 MCP 和当前项目 MCP。',

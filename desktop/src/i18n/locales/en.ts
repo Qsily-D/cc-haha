@@ -68,6 +68,13 @@ export const en = {
   'workspace.previewState.missing': 'File not found.',
   'workspace.imagePreviewUnavailable': 'Image preview is unavailable.',
   'workspace.previewLineLimit': 'Showing first {count} lines. Open in your editor for the full file.',
+  'workspace.addToChat': 'Add to chat',
+  'workspace.copyPath': 'Copy path',
+  'workspace.localComment': 'Local comment',
+  'workspace.commentLine': 'Comment line {line}',
+  'workspace.commentLineTarget': 'Line {line}',
+  'workspace.commentPlaceholder': 'Describe what should change here...',
+  'workspace.addCommentToChat': 'Add comment',
 
   // ─── Status Bar ──────────────────────────────────────
   'status.connected': 'Connected',
@@ -527,6 +534,7 @@ export const en = {
   'chat.placeholder': 'Ask Claude to edit, debug or explain...',
   'chat.placeholderMissing': 'This session points to a missing workspace. Create a new session or pick another project.',
   'chat.addFiles': 'Add files or photos',
+  'chat.workspaceReferencesOnly': 'Added {count} workspace references',
   'chat.slashCommands': 'Slash commands',
   'slash.mcp.title': 'Available MCP tools',
   'slash.mcp.subtitle': 'Global and current-project MCP servers available in this chat context.',
